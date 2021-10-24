@@ -45,4 +45,117 @@ Google 中...
 
 ```
 
+# 二、NavigationBar颜色失效
+
+
+```
+self.navigationController.navigationBar.barTintColor =[UIColor redColor];
+
+```
+
+多么正常的代码，多么符合常理的操作，但是在iOS15的页面失效，不起作用；
+
+无奈查找无果，便前去苹果论坛[寻找答案](https://developer.apple.com/forums/thread/683265)，果然功夫不负有心人让我找到了。
+
+
+```
+As of iOS 15, UINavigationBar, UIToolbar, and UITabBar will use their scrollEdgeAppearance when your view controller's associated scroll view is at the appropriate edge (or always if you don't have a UIScrollView in your hierarchy, more on that below).
+
+```
+
+从 iOS 15 开始，UINavigationBar、UIToolbar 和 UITabBar 将在您的视图控制器的关联滚动视图位于适当的边缘时使用它们的 scrollEdgeAppearance（或者总是如果您的层次结构中没有 UIScrollView，更多内容见下文）。
+
+
+
+```
+You must adopt the UIBarAppearance APIs (available since iOS 13, specializations for each bar type) to customize this behavior. UIToolbar and UITabBar add scrollEdgeAppearance properties for this purpose in iOS 15.
+
+```
+
+您必须采用 UIBarAppearance API（自 iOS 13 起可用，针对每种条形类型进行了专门化）来自定义此行为。 UIToolbar 和 UITabBar 为此在 iOS 15 中添加了 scrollEdgeAppearance 属性。
+so，代码更改如下：
+
+
+
+```
+ if (@available(iOS 15.0, *)) {
+        UINavigationBarAppearance *navigationBarAppearance = [UINavigationBarAppearance new];
+        navigationBarAppearance.backgroundColor = [UIColor redColor];
+        self.navigationController.navigationBar.scrollEdgeAppearance = navigationBarAppearance;
+        self.navigationController.navigationBar.standardAppearance = navigationBarAppearance;
+    }
+
+
+```
+
+注意：
+
+在使用UINavigationBarAppearance进行导航相关设置的时候会与原本的系统API冲突；小弟遇到了这样的情况：
+
+1：首先正常使用原本的系统API设置导航的文字颜色
+
+
+```
+[self.navigationController.navigationBar setTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor whiteColor],NSFontAttributeName:[UIFont systemFontOfSize:15 weight:UIFontWeightRegular]}];
+
+
+```
+
+2：再使用UINavigationBarAppearance设置导航的背景颜色，这时会发现原本设置的字体颜色变成了系统的默认黑色。所以，当需要同时修改导航的背景颜色和字体颜色时，要使用UINavigationBarAppearance同时设置；
+
+
+```
+   if (@available(iOS 15.0, *)) {
+            UINavigationBarAppearance *navigationBarAppearance = [UINavigationBarAppearance new];
+            //设置导航背景颜色
+            navigationBarAppearance.backgroundColor = [UIColor blackColor];
+            //设置导航字体颜色
+            navigationBarAppearance.titleTextAttributes = @{NSForegroundColorAttributeName:[UIColor whiteColor],NSFontAttributeName:[UIFont systemFontOfSize:15 weight:UIFontWeightRegular]};
+            self.navigationController.navigationBar.scrollEdgeAppearance = navigationBarAppearance;
+            self.navigationController.navigationBar.standardAppearance = navigationBarAppearance;
+        }
+
+```
+
+# 三、UITableView section增加默认高度
+
+
+```
+/// Padding above each section header. The default value is `UITableViewAutomaticDimension`.
+@property (nonatomic) CGFloat sectionHeaderTopPadding API_AVAILABLE(ios(15.0), tvos(15.0), watchos(8.0));
+
+
+```
+
+UITableView又新增了一个新属性：sectionHeaderTopPadding 会给每一个section header 增加一个默认高度，当我们使用UITableViewStylePlain 初始化tableView的时候，就会发现系统默认给section header增高了22像素。
+so, 代码更改如下：
+
+
+```
+
+if (@available(iOS 15.0, *)) {
+    _tableView.sectionHeaderTopPadding = 0;
+}
+
+```
+最好改在基类，一次解决所有问题；
+
+如果你觉得这个也比较麻烦，那么还有一种办法：
+
+
+```
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+
+    //iOS 15 的 UITableView 新增了一条新属性：sectionHeaderTopPadding， 默认会给每一个 section header 增加一个高度，当我们使用 UITableViewStylePlain 初始化 UITableView 的时候，能发现 sectionHeader 增高了 22px。。
+    if(@available(iOS 15.0, *)){
+        UITableView.appearance.sectionHeaderTopPadding=0;
+    }
+
+    return YES;
+}
+
+```
+
+
+
 
