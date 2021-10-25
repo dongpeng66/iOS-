@@ -156,6 +156,84 @@ if (@available(iOS 15.0, *)) {
 
 ```
 
+# 四、 NavigationBar 颜色及背景失效
+
+
+1.问题描述
+
+项目中往往会自定义一个导航控制器，方便全局指定导航条的背景色、标题颜色等等。以设置背景色和标题颜色为例：
+
+
+
+```
+//背景色
+self.navigationBar.barTintColor = RGB(42, 109, 240);
+//Title 颜色
+NSDictionary *titleTextAttributes = @{NSFontAttributeName:[UIFont fontWithName:@"" size:18], NSForegroundColorAttributeName:RGB(255, 255, 255)};
+[self.navigationBar setTitleTextAttributes:titleTextAttributes];
+
+
+```
+
+但在 iOS 15上发现，指定的背景色失效了，但滚动控制器的视图时，导航条的背景又出现了。看了一眼 UINavigationBar 的 API，15中并没有新增的。倒是有几个 iOS 13新增的 API 我没用过……哈哈哈，写到这里觉得自己以前的功课落下太多了，13的更新还没学习呢😂😂😂😂😂
+
+2.iOS 13新增 API
+
+**standardAppearance : 描述导航栏以标准高度显示时要使用的外观属性。**
+
+
+```
+@property (nonatomic, readwrite, copy) UINavigationBarAppearance *standardAppearance;
+
+```
+
+**compactAppearance : 描述导航栏在紧凑高度时使用的外观属性。如果未设置，则将使用标准外观。**
+
+```
+@property (nonatomic, readwrite, copy, nullable) UINavigationBarAppearance *compactAppearance;
+
+```
+
+**scrollEdgeAppearance : 描述当关联的 UIScrollView 向上滚动时要使用的导航栏的外观属性。如果未设置，将改用修改后的standardAppearance。**
+
+```
+@property (nonatomic, readwrite, copy, nullable) UINavigationBarAppearance *scrollEdgeAppearance;
+
+```
+**compactScrollEdgeAppearance : 描述当导航栏以紧凑的高度显示时，以及关联的 UIScrollView 往上滚动时，要使用的导航栏的外观属性。如果未设置，则首先尝试 scrollEdgeAppearance，如果为nil，则尝试 compactAppearance，然后尝试修改 standardAppearance。**
+
+```
+@property(nonatomic,readwrite, copy, nullable) UINavigationBarAppearance *compactScrollEdgeAppearance;
+
+```
+
+3.解决办法
+
+**根据我们的问题现象，猜测是 standardAppearance 和 scrollEdgeAppearance 需要调整，如果正常状态和滚动状态颜色一样，可以修改如下**
+
+
+```
+NSDictionary *titleTextAttributes = @{NSFontAttributeName:[UIFont fontWithName:MAIN_FONT_FAMILY size:18], NSForegroundColorAttributeName:RGB(255, 255, 255)};
+if (@available(iOS 13.0, *)) {
+    UINavigationBarAppearance *appearance = [UINavigationBarAppearance new];
+    appearance.backgroundColor = RGB(42, 109, 240);
+    appearance.titleTextAttributes = titleTextAttributes;    
+    self.navigationBar.standardAppearance = appearance;
+    self.navigationBar.scrollEdgeAppearance = appearance;
+} else {
+    // Fallback on earlier versions
+    self.navigationBar.barTintColor = RGB(42, 109, 240);
+    [self.navigationBar setTitleTextAttributes:titleTextAttributes];
+}
+
+```
+
+Bingo！颜色显示正常啦
+
+所以这是什么意思？强买强卖吗？必须设置 Appearance 才可以？
+
+
+
 
 
 
