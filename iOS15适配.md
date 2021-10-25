@@ -232,8 +232,122 @@ Bingo！颜色显示正常啦
 
 所以这是什么意思？强买强卖吗？必须设置 Appearance 才可以？
 
+4.遗留问题
+
+在 Xcode 13-beta 中，必须同时指定 standardAppearance 和 scrollEdgeAppearance 才可以。但根据苹果的注释，如果 scrollEdgeAppearance 为nil，会默认使用 standardAppearance 啊。燃鹅并不行。不知道是苹果的 bug 还是怎么的……朋友昨天叫我一起转行了，因为他觉得苹果的系统做的一年不如一年~ 😂
+
+# 五、UITabBar 背景图失效
+
+这个问题有点类似上一个，UITabBar 之前设置的背景图片，老版本可以，iOS 15上表现为空白。参考问题二的思路，找到了下面的 API，做个兼容就可以了。当然，遗留问题同上，必须同时指定 standardAppearance 和 scrollEdgeAppearance 才可以……🙄……而且，如果在初始化以后，某个时机单独修改了 standardAppearance，也必须要同步指定一下 scrollEdgeAppearance ……🙄
+
+**API**
+
+```
+@property (nonatomic, readwrite, copy) UITabBarAppearance *standardAppearance;//ios 13.0.
+@property (nonatomic, readwrite, copy, nullable) UITabBarAppearance *scrollEdgeAppearance;//ios 15.0.
+
+```
+**老方式**
+
+```
+[self.tabBar setBackgroundImage:[img imageWithRenderingMode:(UIImageRenderingModeAlwaysOriginal)]];
+
+```
+
+**兼容新的API**
+
+```
+UIImage *img = [UIImage imageNamed:@"ahaaaaa"];
+if (@available(iOS 13.0, *)) {
+    UITabBarAppearance *appearance = [[UITabBarAppearance alloc] init];
+    appearance.backgroundImage = img;
+    appearance.backgroundImageContentMode = UIViewContentModeScaleToFill;
+    self.tabBar.standardAppearance = appearance;
+    if (@available(iOS 15.0, *)) {
+        self.tabBar.scrollEdgeAppearance = appearance;
+    } else {
+        // Fallback on earlier versions
+    }
+} else {
+    // Fallback on earlier versions
+    [self.tabBar setBackgroundImage:[img imageWithRenderingMode:(UIImageRenderingModeAlwaysOriginal)]];
+}
 
 
+```
 
+# 六、UITabBarItem 文字颜色失效
+……还是同上，新版本中 UITabBarItem 文字颜色的修改不起作用。同样是在 iOS 13 中新增的 UITabBarItemAppearance 来修改 Item 的不同状态下的不同表现。遗留问题同上。
+
+相关的类型如下，其他的API就不贴了：
+UITabBarItemAppearance 、 UITabBarItemStateAppearance
+
+```
+/// The appearance when the tab bar item is in the normal state
+@property (nonatomic, readonly, strong) UITabBarItemStateAppearance *normal;
+
+/// The appearance when the tab bar item is in the selected state
+@property (nonatomic, readonly, strong) UITabBarItemStateAppearance *selected;
+
+/// The appearance when the tab bar item is in the disabled state
+@property (nonatomic, readonly, strong) UITabBarItemStateAppearance *disabled;
+
+/// The appearance when the tab bar item is in the focused state
+@property (nonatomic, readonly, strong) UITabBarItemStateAppearance *focused;
+
+```
+**兼容新的API**
+
+```
+//Set tabBar style.
+UIColor *normalTitleColor = RGBA(80, 80, 81, 1);
+UIColor *selectedTitleColor = RGBA(42, 109, 240, 1);
+if (@available(iOS 13.0, *)) {
+    UITabBarItemAppearance *itemAppearance = [[UITabBarItemAppearance alloc] init];
+    itemAppearance.normal.titleTextAttributes = @{NSForegroundColorAttributeName : normalTitleColor};
+    itemAppearance.selected.titleTextAttributes = @{NSForegroundColorAttributeName : selectedTitleColor};
+    UITabBarAppearance *appearance = [[UITabBarAppearance alloc] init];
+    appearance.stackedLayoutAppearance = itemAppearance;
+    self.tabBar.standardAppearance = appearance;
+    if (@available(iOS 15.0, *)) {
+        self.tabBar.scrollEdgeAppearance = appearance;
+    } else {
+        // Fallback on earlier versions
+    }
+}else if (@available(iOS 10.0, *)) {
+    self.tabBar.tintColor = normalTitleColor;
+    self.tabBar.unselectedItemTintColor = selectedTitleColor;
+}else {
+    // Fallback on earlier versions
+}
+
+
+```
+# 七、新增机型设备标识符
+
+```
+    //iPhone 13
+    if ([platform isEqualToString:@"iPhone14,2"])   return @"iPhone 13 Pro";
+    if ([platform isEqualToString:@"iPhone14,3"])   return @"iPhone 13 Pro Max";
+    if ([platform isEqualToString:@"iPhone14,4"])   return @"iPhone 13 mini";
+    if ([platform isEqualToString:@"iPhone14,5"])   return @"iPhone 13";
+	
+```
+    if ([platform isEqualToString:@"iPad12,1"] ||
+        [platform isEqualToString:@"iPad12,2"])     return @"iPad 9";
+
+```
+
+```
+    if ([platform isEqualToString:@"iPad13,8"] ||
+        [platform isEqualToString:@"iPad13,9"] ||
+        [platform isEqualToString:@"iPad13,10"] ||
+        [platform isEqualToString:@"iPad13,11"])     return @"iPad Pro 12.9-inch 6";
+
+```
+    if ([platform isEqualToString:@"iPad14,1"] ||
+        [platform isEqualToString:@"iPad14,2"])     return @"iPad mini 6";
+
+```
 
 
