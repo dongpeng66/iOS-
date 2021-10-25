@@ -351,3 +351,101 @@ if (@available(iOS 13.0, *)) {
 ```
 
 
+# 八、升级Xcode13第三方库Kingfisher报错问题
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/2.png)
+
+
+因为项目需要适配iOS10，并且项目没有使用到swiftui，所以就使用ruby脚本将报错相关代码移除掉
+在Podfile文件中添加以下钩子函数，然后运行pod install
+
+```
+platform :ios, '10.0'
+use_modular_headers!
+inhibit_all_warnings!
+...
+pre_install do |installer|
+    remove_swiftui()
+end
+
+def remove_swiftui
+  # 解决 xcode13 Release模式下SwiftUI报错问题
+  system("rm -rf ./Pods/Kingfisher/Sources/SwiftUI")
+  code_file = "./Pods/Kingfisher/Sources/General/KFOptionsSetter.swift"
+  code_text = File.read(code_file)
+  code_text.gsub!(/#if canImport\(SwiftUI\) \&\& canImport\(Combine\)(.|\n)+#endif/,'')
+  system("rm -rf " + code_file)
+  aFile = File.new(code_file, 'w+')
+  aFile.syswrite(code_text)
+  aFile.close()
+end
+```
+
+# 九、Xcode13.0 变化
+下载后完成，就开始创建一个工程，发现界面变了不少。
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/4.jpeg)
+
+一开始是没有那些后缀名的，我直接在Xcode->Preferences里面更改的
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/5.jpeg)
+
+这时候我看到上面有一个issues,显示show inline的选项
+
+show inline显示如下
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/6.jpeg)
+
+show Minimized是显示如下：
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/7.jpeg)
+
+对比可以发现1个简洁很多，1个是错误明显很多，就看个人喜爱了。
+
+bulid了一下项目，发现没有buildSuccess的提示了，替代方案可以选择通知，直接在通知，找到xcode,选择提示就可以。
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/8.jpeg)
+
+效果如下：
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/9.jpeg)
+
+但感觉还是没有以前好，总是弹通知也感觉有点烦。
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/10.jpeg)
+
+还有一些项目提示这个，我们直接在File->workspace settings中设置为New Build System就可以了。
+
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/11.jpeg)
+
+# 十、 升级ios14 Xcode真机调试启动非常慢的问题解决
+
+1.打开“访达”,shift+command+G到资源库 “~/Library/Developer/Xcode/iOS DeviceSupport/”删除该目录下所有文件 快捷键（shift+command+G到资源库）
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/12.png)
+
+2.全部删除文件夹下所有文件
+
+选择Xcode->Window->Devices and Simulators 真机设备，鼠标右键选择unpair the device
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/13.png)
+
+
+# 十一、企业签名的 App 无法使用
+
+客户反馈说 App 不能正常打开，并且提示下面的这种信息：
+
+```
+“xxx”Needs to Be Updated : The developer of this app needs to update it to work with this version of iOS.
+“xxx”需要更新 ：App开发者需要更新此App以在此iOS版本上正常工作。
+```
+![](https://github.com/dongpeng66/iOS-/blob/main/images/3.jpg)
+
+猜测是需要重签名或者使用最新的 Xcode 打包。
+
+我看苹果论坛上有人说必须使用新的 Xcode 以适配 iOS 15，但我用旧版的 Xcode 重新打了一个包，也可以解决这个问题。所以，不方便更新 Xcode 的话，可以尝试重签名试试。
+
+睡了一觉之究极补充： 签名问题与 Xcode 版本无关，而是 Mac 系统导致的，将 macOS 升级到 11.* Big Sur 以上再进行重新签名，可以解决 App 无法使用的问题。
+
+
