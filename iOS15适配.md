@@ -156,6 +156,296 @@ if (@available(iOS 15.0, *)) {
 
 ```
 
+# 四、 NavigationBar 颜色及背景失效
 
+
+1.问题描述
+
+项目中往往会自定义一个导航控制器，方便全局指定导航条的背景色、标题颜色等等。以设置背景色和标题颜色为例：
+
+
+
+```
+//背景色
+self.navigationBar.barTintColor = RGB(42, 109, 240);
+//Title 颜色
+NSDictionary *titleTextAttributes = @{NSFontAttributeName:[UIFont fontWithName:@"" size:18], NSForegroundColorAttributeName:RGB(255, 255, 255)};
+[self.navigationBar setTitleTextAttributes:titleTextAttributes];
+
+
+```
+
+但在 iOS 15上发现，指定的背景色失效了，但滚动控制器的视图时，导航条的背景又出现了。看了一眼 UINavigationBar 的 API，15中并没有新增的。倒是有几个 iOS 13新增的 API 我没用过……哈哈哈，写到这里觉得自己以前的功课落下太多了，13的更新还没学习呢😂😂😂😂😂
+
+2.iOS 13新增 API
+
+**standardAppearance : 描述导航栏以标准高度显示时要使用的外观属性。**
+
+
+```
+@property (nonatomic, readwrite, copy) UINavigationBarAppearance *standardAppearance;
+
+```
+
+**compactAppearance : 描述导航栏在紧凑高度时使用的外观属性。如果未设置，则将使用标准外观。**
+
+```
+@property (nonatomic, readwrite, copy, nullable) UINavigationBarAppearance *compactAppearance;
+
+```
+
+**scrollEdgeAppearance : 描述当关联的 UIScrollView 向上滚动时要使用的导航栏的外观属性。如果未设置，将改用修改后的standardAppearance。**
+
+```
+@property (nonatomic, readwrite, copy, nullable) UINavigationBarAppearance *scrollEdgeAppearance;
+
+```
+**compactScrollEdgeAppearance : 描述当导航栏以紧凑的高度显示时，以及关联的 UIScrollView 往上滚动时，要使用的导航栏的外观属性。如果未设置，则首先尝试 scrollEdgeAppearance，如果为nil，则尝试 compactAppearance，然后尝试修改 standardAppearance。**
+
+```
+@property(nonatomic,readwrite, copy, nullable) UINavigationBarAppearance *compactScrollEdgeAppearance;
+
+```
+
+3.解决办法
+
+**根据我们的问题现象，猜测是 standardAppearance 和 scrollEdgeAppearance 需要调整，如果正常状态和滚动状态颜色一样，可以修改如下**
+
+
+```
+NSDictionary *titleTextAttributes = @{NSFontAttributeName:[UIFont fontWithName:MAIN_FONT_FAMILY size:18], NSForegroundColorAttributeName:RGB(255, 255, 255)};
+if (@available(iOS 13.0, *)) {
+    UINavigationBarAppearance *appearance = [UINavigationBarAppearance new];
+    appearance.backgroundColor = RGB(42, 109, 240);
+    appearance.titleTextAttributes = titleTextAttributes;    
+    self.navigationBar.standardAppearance = appearance;
+    self.navigationBar.scrollEdgeAppearance = appearance;
+} else {
+    // Fallback on earlier versions
+    self.navigationBar.barTintColor = RGB(42, 109, 240);
+    [self.navigationBar setTitleTextAttributes:titleTextAttributes];
+}
+
+```
+
+Bingo！颜色显示正常啦
+
+所以这是什么意思？强买强卖吗？必须设置 Appearance 才可以？
+
+4.遗留问题
+
+在 Xcode 13-beta 中，必须同时指定 standardAppearance 和 scrollEdgeAppearance 才可以。但根据苹果的注释，如果 scrollEdgeAppearance 为nil，会默认使用 standardAppearance 啊。燃鹅并不行。不知道是苹果的 bug 还是怎么的……朋友昨天叫我一起转行了，因为他觉得苹果的系统做的一年不如一年~ 😂
+
+# 五、UITabBar 背景图失效
+
+这个问题有点类似上一个，UITabBar 之前设置的背景图片，老版本可以，iOS 15上表现为空白。参考问题二的思路，找到了下面的 API，做个兼容就可以了。当然，遗留问题同上，必须同时指定 standardAppearance 和 scrollEdgeAppearance 才可以……🙄……而且，如果在初始化以后，某个时机单独修改了 standardAppearance，也必须要同步指定一下 scrollEdgeAppearance ……🙄
+
+**API**
+
+```
+@property (nonatomic, readwrite, copy) UITabBarAppearance *standardAppearance;//ios 13.0.
+@property (nonatomic, readwrite, copy, nullable) UITabBarAppearance *scrollEdgeAppearance;//ios 15.0.
+
+```
+**老方式**
+
+```
+[self.tabBar setBackgroundImage:[img imageWithRenderingMode:(UIImageRenderingModeAlwaysOriginal)]];
+
+```
+
+**兼容新的API**
+
+```
+UIImage *img = [UIImage imageNamed:@"ahaaaaa"];
+if (@available(iOS 13.0, *)) {
+    UITabBarAppearance *appearance = [[UITabBarAppearance alloc] init];
+    appearance.backgroundImage = img;
+    appearance.backgroundImageContentMode = UIViewContentModeScaleToFill;
+    self.tabBar.standardAppearance = appearance;
+    if (@available(iOS 15.0, *)) {
+        self.tabBar.scrollEdgeAppearance = appearance;
+    } else {
+        // Fallback on earlier versions
+    }
+} else {
+    // Fallback on earlier versions
+    [self.tabBar setBackgroundImage:[img imageWithRenderingMode:(UIImageRenderingModeAlwaysOriginal)]];
+}
+
+
+```
+
+# 六、UITabBarItem 文字颜色失效
+……还是同上，新版本中 UITabBarItem 文字颜色的修改不起作用。同样是在 iOS 13 中新增的 UITabBarItemAppearance 来修改 Item 的不同状态下的不同表现。遗留问题同上。
+
+相关的类型如下，其他的API就不贴了：
+UITabBarItemAppearance 、 UITabBarItemStateAppearance
+
+```
+/// The appearance when the tab bar item is in the normal state
+@property (nonatomic, readonly, strong) UITabBarItemStateAppearance *normal;
+
+/// The appearance when the tab bar item is in the selected state
+@property (nonatomic, readonly, strong) UITabBarItemStateAppearance *selected;
+
+/// The appearance when the tab bar item is in the disabled state
+@property (nonatomic, readonly, strong) UITabBarItemStateAppearance *disabled;
+
+/// The appearance when the tab bar item is in the focused state
+@property (nonatomic, readonly, strong) UITabBarItemStateAppearance *focused;
+
+```
+**兼容新的API**
+
+```
+//Set tabBar style.
+UIColor *normalTitleColor = RGBA(80, 80, 81, 1);
+UIColor *selectedTitleColor = RGBA(42, 109, 240, 1);
+if (@available(iOS 13.0, *)) {
+    UITabBarItemAppearance *itemAppearance = [[UITabBarItemAppearance alloc] init];
+    itemAppearance.normal.titleTextAttributes = @{NSForegroundColorAttributeName : normalTitleColor};
+    itemAppearance.selected.titleTextAttributes = @{NSForegroundColorAttributeName : selectedTitleColor};
+    UITabBarAppearance *appearance = [[UITabBarAppearance alloc] init];
+    appearance.stackedLayoutAppearance = itemAppearance;
+    self.tabBar.standardAppearance = appearance;
+    if (@available(iOS 15.0, *)) {
+        self.tabBar.scrollEdgeAppearance = appearance;
+    } else {
+        // Fallback on earlier versions
+    }
+}else if (@available(iOS 10.0, *)) {
+    self.tabBar.tintColor = normalTitleColor;
+    self.tabBar.unselectedItemTintColor = selectedTitleColor;
+}else {
+    // Fallback on earlier versions
+}
+
+
+```
+# 七、新增机型设备标识符
+
+```
+    //iPhone 13
+    if ([platform isEqualToString:@"iPhone14,2"])   return @"iPhone 13 Pro";
+    if ([platform isEqualToString:@"iPhone14,3"])   return @"iPhone 13 Pro Max";
+    if ([platform isEqualToString:@"iPhone14,4"])   return @"iPhone 13 mini";
+    if ([platform isEqualToString:@"iPhone14,5"])   return @"iPhone 13";
+	
+```
+    if ([platform isEqualToString:@"iPad12,1"] ||
+        [platform isEqualToString:@"iPad12,2"])     return @"iPad 9";
+
+```
+
+```
+    if ([platform isEqualToString:@"iPad13,8"] ||
+        [platform isEqualToString:@"iPad13,9"] ||
+        [platform isEqualToString:@"iPad13,10"] ||
+        [platform isEqualToString:@"iPad13,11"])     return @"iPad Pro 12.9-inch 6";
+
+```
+    if ([platform isEqualToString:@"iPad14,1"] ||
+        [platform isEqualToString:@"iPad14,2"])     return @"iPad mini 6";
+
+```
+
+
+# 八、升级Xcode13第三方库Kingfisher报错问题
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/2.png)
+
+
+因为项目需要适配iOS10，并且项目没有使用到swiftui，所以就使用ruby脚本将报错相关代码移除掉
+在Podfile文件中添加以下钩子函数，然后运行pod install
+
+```
+platform :ios, '10.0'
+use_modular_headers!
+inhibit_all_warnings!
+...
+pre_install do |installer|
+    remove_swiftui()
+end
+
+def remove_swiftui
+  # 解决 xcode13 Release模式下SwiftUI报错问题
+  system("rm -rf ./Pods/Kingfisher/Sources/SwiftUI")
+  code_file = "./Pods/Kingfisher/Sources/General/KFOptionsSetter.swift"
+  code_text = File.read(code_file)
+  code_text.gsub!(/#if canImport\(SwiftUI\) \&\& canImport\(Combine\)(.|\n)+#endif/,'')
+  system("rm -rf " + code_file)
+  aFile = File.new(code_file, 'w+')
+  aFile.syswrite(code_text)
+  aFile.close()
+end
+```
+
+# 九、Xcode13.0 变化
+下载后完成，就开始创建一个工程，发现界面变了不少。
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/4.jpeg)
+
+一开始是没有那些后缀名的，我直接在Xcode->Preferences里面更改的
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/5.jpeg)
+
+这时候我看到上面有一个issues,显示show inline的选项
+
+show inline显示如下
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/6.jpeg)
+
+show Minimized是显示如下：
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/7.jpeg)
+
+对比可以发现1个简洁很多，1个是错误明显很多，就看个人喜爱了。
+
+bulid了一下项目，发现没有buildSuccess的提示了，替代方案可以选择通知，直接在通知，找到xcode,选择提示就可以。
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/8.jpeg)
+
+效果如下：
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/9.jpeg)
+
+但感觉还是没有以前好，总是弹通知也感觉有点烦。
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/10.jpeg)
+
+还有一些项目提示这个，我们直接在File->workspace settings中设置为New Build System就可以了。
+
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/11.jpeg)
+
+# 十、 升级ios14 Xcode真机调试启动非常慢的问题解决
+
+1.打开“访达”,shift+command+G到资源库 “~/Library/Developer/Xcode/iOS DeviceSupport/”删除该目录下所有文件 快捷键（shift+command+G到资源库）
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/12.png)
+
+2.全部删除文件夹下所有文件
+
+选择Xcode->Window->Devices and Simulators 真机设备，鼠标右键选择unpair the device
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/13.png)
+
+
+# 十一、企业签名的 App 无法使用
+
+客户反馈说 App 不能正常打开，并且提示下面的这种信息：
+
+```
+“xxx”Needs to Be Updated : The developer of this app needs to update it to work with this version of iOS.
+“xxx”需要更新 ：App开发者需要更新此App以在此iOS版本上正常工作。
+```
+![](https://github.com/dongpeng66/iOS-/blob/main/images/3.jpg)
+
+猜测是需要重签名或者使用最新的 Xcode 打包。
+
+我看苹果论坛上有人说必须使用新的 Xcode 以适配 iOS 15，但我用旧版的 Xcode 重新打了一个包，也可以解决这个问题。所以，不方便更新 Xcode 的话，可以尝试重签名试试。
+
+睡了一觉之究极补充： 签名问题与 Xcode 版本无关，而是 Mac 系统导致的，将 macOS 升级到 11.* Big Sur 以上再进行重新签名，可以解决 App 无法使用的问题。
 
 
