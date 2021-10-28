@@ -448,4 +448,12 @@ bulid了一下项目，发现没有buildSuccess的提示了，替代方案可以
 
 睡了一觉之究极补充： 签名问题与 Xcode 版本无关，而是 Mac 系统导致的，将 macOS 升级到 11.* Big Sur 以上再进行重新签名，可以解决 App 无法使用的问题。
 
+# 十二、SignInApple iOS15.0.1取消 的动画卡动问题
+
+如下：
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/SignInAppleiOS15.gif)
+
+
+暂未找到解决方案........待补充.........
 
