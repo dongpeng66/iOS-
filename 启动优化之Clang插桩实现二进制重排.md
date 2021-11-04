@@ -256,3 +256,21 @@ iOS 系统中 , 一页为 16KB .
 当工程 build 的时候 , Xcode 会读取这个文件 , 打的二进制包就会按照这个文件中的符号顺序进行生成对应的 mach-O .
 ```
 ![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main12.png)
+
+# 二进制重排疑问 - 题外话 :
+
+1️⃣ : order 文件里 符号写错了或者这个符号不存在会不会有问题 ?
+  ### 答 : ld 会忽略这些符号 , 实际上如果提供了 link 选项 -order_file_statistics，会以 warning 的形式把这些没找到的符号打印在日志里。.
+  
+2️⃣ : 有部分同学可能会考虑这种方式会不会影响上架 ?
+  ### 答 : 首先 , objc 源码自己也在用这种方式 .
+
+  ### 二进制重排只是重新排列了所生成的 macho 中函数表与符号表的顺序 .
+  
+# 如何查看自己工程的符号顺序
+
+重排前后我们需要查看自己的符号顺序有没有修改成功 , 这时候就用到了 Link Map .
+
+Link Map 是编译期间产生的产物 , ( ld 的读取二进制文件顺序默认是按照 Compile Sources - GUI 里的顺序 ) , 它记录了二进制文件的布局 . 通过设置 Write Link Map File 来设置输出与否 , 默认是 no 
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main13.png)
