@@ -282,3 +282,33 @@ Link Map 是编译期间产生的产物 , ( ld 的读取二进制文件顺序默
 按下图依次找到最新的一个 .txt 文件并打开.
 
 ![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main15.png)
+
+这个文件中就存储了所有符号的顺序 , 在 # Symbols: 部分 ( 前面的 .o 等内容忽略 , 这部分在笔者后续讲述 llvm 编译器篇章会详细讲解 ) .
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main16.png)
+
+可以看到 , 这个符号顺序明显是按照 Compile Sources 的文件顺序来排列的 .
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main17.png)
+
+```
+提示 :
+上述文件中最左侧地址就是 实际代码地址而并非符号地址 , 因此我们二进制重排并非只是修改符号地址 , 而是利用符号顺序 , 重新排列整个代码在文件的偏移地址 , 将启动需要加载的方法地址放到前面内存页中 , 以此达到减少 page fault 的次数从而实现时间上的优化 , 一定要清楚这一点 .
+
+```
+
+你可以利用 MachOView 查看排列前后在 _text 段 ( 代码段 ) 中的源码顺序来帮助理解 .
+
+# 实战演练
+
+来到工程根目录 , 新建一个文件 touch lb.order . 随便挑选几个启动时就需要加载的方法 , 例如我这里选了以下几个 .
+
+```
+-[LBOCTools lbCurrentPresentingVC]
++[LBOCTools lbGetCurrentTimes]
++[RSAEncryptor stripPublicKeyHeader:]
+```
+
+写到该文件中 , 保存 , 配置文件路径 .
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main18.png)
