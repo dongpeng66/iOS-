@@ -167,5 +167,92 @@ iOS 系统中 , 一页为 16KB .
 
 ![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main6.png)
 
+那么启动时 , page1 与 page2 则都需要从无到有加载到物理内存中 , 从而触发两次 page fault .
+
+而二进制重排的做法就是将 method1 与 method4 放到一个内存页中 , 那么启动时则只需要加载 page1 即可 , 也就是只触发一次 page fault , 达到优化目的 .
+
+实际项目中的做法是将启动时需要调用的函数放到一起 ( 比如 前10页中 ) 以尽可能减少 page fault , 达到优化目的 . 而这个做法就叫做 : 二进制重排 .
+
+讲到这里相信很多同学已经迫不及待的想要看看具体怎么二进制重排了 . 其实操作很简单 , 但是在操作之前我们还需要知道这几点 :
+
+如何检测 page fault : 首先我们要想看到优化效果 , 就应该知道如何查看 page fault , 以此来帮助我们查看优化前以及优化后的效果 .
+
+1.如何重排二进制 .
+
+2.如何查看自己重排成功了没有 ?
+
+3.如何检测自己启动时刻需要调用的所有方法 .
+
+```
+  hook objc_MsgSend ( 只能拿到 oc 以及 swift 加上 @objc dynamic 修饰后的方法 ) .
+
+  静态扫描 macho 特定段和节里面所存储的符号以及函数数据 . (静态扫描 , 主要用来获取 load 方法 , c++ 构造(有关 c++ 构造 , 参考 从头梳理 dyld 加载流程 这篇文章有详细讲述和演示 ) .
+
+  clang 插桩 ( 完美版本 , 完全拿到 swift , oc , c , block 全部函数 )
+
+```
+
+内容很多 , 我们一项一项来 .
+
+# 如何查看 page fault
 
 
+```
+提示 :
+
+如果想查看真实 page fault 次数 , 应该将应用卸载 , 查看第一次应用安装后的效果 , 或者先打开很多个其他应用 .
+
+因为之前运行过 app , 应用其中一部分已经被加载到物理内存并做好映射表映射 , 这时再启动就会少触发一部分缺页中断 , 并且杀掉应用再打开也是如此 .
+
+其实就是希望将物理内存中之前加载的覆盖/清理掉 , 减少误差 .
+```
+
+1️⃣ : 打开 Instruments , 选择 System Trace .
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main7.png)
+
+2️⃣ : 选择真机 , 选择工程 , 点击启动 , 当首个页面加载出来点击停止 . 这里注意 , 最好是将应用杀掉重新安装 , 因为冷热启动的界定其实由于进程的原因并不一定后台杀掉应用重新打开就是冷启动 .
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main8.png)
+
+3️⃣ : 等待分析完成 , 查看缺页次数
+
+后台杀掉重启应用
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main9.png)
+
+### * 第一次安装启动应用
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main10.png)
+
+当然 , 你可以通过添加 DYLD_PRINT_STATISTICS 来查看 pre-main 阶段总耗时来做一个侧面辅证 .
+
+大家可以分别测试以下几种情况 , 来深度理解冷启动 or 热启动以及物理内存分页覆盖的实际情况 .
+
+```
+应用第一次安装启动
+
+应用后台没有打开时启动
+
+杀掉后台后重新启动
+
+不杀掉后台重新启动
+
+杀掉后台后多打开一些其他应用再次启动
+```
+
+# 二进制重排具体如何操作
+
+说了这么多前导知识 , 终于要开始做二进制重排了 , 其实具体操作很简单 , Xcode 已经提供好这个机制 , 并且 libobjc 实际上也是用了二进制重排进行优化 .
+
+参考下图
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main11.png)
+
+```
+首先 , Xcode 是用的链接器叫做 ld , ld 有一个参数叫 Order File , 我们可以通过这个参数配置一个 order 文件的路径 .
+
+在这个 order 文件中 , 将你需要的符号按顺序写在里面 .
+
+当工程 build 的时候 , Xcode 会读取这个文件 , 打的二进制包就会按照这个文件中的符号顺序进行生成对应的 mach-O .
+```
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main12.png)
