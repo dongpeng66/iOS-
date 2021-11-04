@@ -348,3 +348,77 @@ clang 插桩 ( 完美版本 , 完全拿到 swift , oc , c,c++ , block 全部函�
 
 #  原理探索
 
+新建一个工程来测试和使用一下这个静态插桩代码覆盖工具的机制和原理 . ( 不想看这个过程的自行跳到静态插桩原理总结章节 )
+
+按照文档指示来走 .
+
+首先 , 添加编译设置 .
+
+直接搜索 Other C Flags 来到 Apple Clang - Custom Compiler Flags 中 , 添加
+```
+-fsanitize-coverage=trace-pc-guard
+```
+添加 hook 代码 .
+
+```
+void __sanitizer_cov_trace_pc_guard_init(uint32_t *start,
+                                                    uint32_t *stop) {
+  static uint64_t N;  // Counter for the guards.
+  if (start == stop || *start) return;  // Initialize only once.
+  printf("INIT: %p %p\n", start, stop);
+  for (uint32_t *x = start; x < stop; x++)
+    *x = ++N;  // Guards should start from 1.
+}
+ 
+void __sanitizer_cov_trace_pc_guard(uint32_t *guard) {
+  if (!*guard) return;  // Duplicate the guard check.
+ 
+  void *PC = __builtin_return_address(0);
+  char PcDescr[1024];
+  //__sanitizer_symbolize_pc(PC, "%p %F %L", PcDescr, sizeof(PcDescr));
+  printf("guard: %p %x PC %s\n", guard, *guard, PcDescr);
+}
+```
+
+
+笔者这里是写在空工程的 ViewController.m 里的.
+
+运行工程 , 查看打印
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main20.png)
+
+代码命名 INIT 后面打印的两个指针地址叫 start 和 stop . 那么我们通过 lldb 来查看下从 start 到 stop 这个内存地址里面所存储的到底是啥 .
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main21.png)
+
+发现存储的是从 1 到 14 这个序号 . 那么我们来添加一个 oc 方法 .
+```
+- (void)testOCFunc{
+     
+}
+```
+再次运行查看 .
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main22.png)
+
+发现从 0e 变成了 0f . 也就是说存储的 1 到 14 这个序号变成了 1 到 15 .
+
+那么我们再添加一个 c 函数 , 一个 block , 和一个触摸屏幕方法来看下 .
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main23.png)
+
+同样发现序号依次增加到了 18 个 , 那么我们得到一个猜想 , 这个内存区间保存的就是工程所有符号的个数 .
+
+其次 , 我们在触摸屏幕方法调用了 c 函数 , c 函数中调用了 block . 那么我们点击屏幕 , 发现如下 :
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main24.png)
+
+发现我们实际调用几个方法 , 就会打印几次 guard : .
+
+实际上就类似我们埋点统计所实现的效果 . 在触摸方法添加一个断点查看汇编 :
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main25.png)
+
+通过汇编我们发现 , 在每个函数调用的第一句实际代码 ( 栈平衡与寄存器数据准备除外 ) , 被添加进去了一个 bl 调用到 __sanitizer_cov_trace_pc_guard 这个函数中来 .
+
+而实际上这也是静态插桩的原理和名称由来 .
+
