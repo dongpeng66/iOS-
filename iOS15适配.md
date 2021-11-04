@@ -459,3 +459,149 @@ bulid了一下项目，发现没有buildSuccess的提示了，替代方案可以
 
 暂未找到解决方案........待补充.........
 
+# 十三 、iOS15适配本地通知功能
+
+## 消息推送
+
+推送新特性: iOS15以上的新增属性 interruptionLevel为枚UNNotificationInterruptionLevel
+
+## 1.1 本地推送适配
+
+需求：利用本地推送实现消息的语音播报
+问题：iOS12.1之后利用本地推送实现消息的语音播报，在iOS15 没有声音。
+
+原因： iOS15本地推送新增了中断级别属性 interruptionLevel,对通知进行了分级	。而且通知的内容不能为空。
+方案：使用非Passive的中断级别进行本地通知才会有声音，且本地推送一定要有内容，即body不能为空。content.body = @" 不能为空";
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/14.png)
+
+```
+UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
+    content.title = @"";
+    content.subtitle = @"";
+    content.sound = [UNNotificationSound soundNamed:fileName];
+    content.badge = @(1);
+    
+    if (@available(iOS 15.0, *)) {
+        content.interruptionLevel = UNNotificationInterruptionLevelTimeSensitive;//会使手机亮屏且会播放声音；可能会在免打扰模式（焦点模式）下展示
+// @"{\"aps\":{\"interruption-level\":\"time-sensitive\"}}";
+// @"{\"aps\":{\"interruption-level\":\"active\"}}";
+        content.body = @" ";// 本地推送一定要有内容，即body不能为空。
+        
+    }else{
+        
+        content.body = @"";
+
+    }
+    
+    UNTimeIntervalNotificationTrigger *trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:0.001 repeats:NO];
+    // 添加通知的标识符，可以用于移除，更新等操作
+    NSString *identifier = [NSString stringWithFormat:@"localPushId%lld", (long long)[[NSDate date] timeIntervalSince1970]];
+    UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:identifier content:content trigger:trigger];
+    [center addNotificationRequest:request withCompletionHandler:^(NSError *_Nullable error) {
+        CGFloat waitTime = [self timeForAudioFileWithFileName:fileName];
+//            CGFloat waitTime = 0.3;
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(waitTime * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self localNotificationPushNextFile];
+        });
+    }];
+```
+
+中断级别目前分为四种：
+
+```
+    typedef NS_ENUM(NSUInteger, UNNotificationInterruptionLevel) {
+        // Added to the notification list; does not light up screen or play sound
+        UNNotificationInterruptionLevelPassive,
+        
+        // Presented immediately; Lights up screen and may play a sound
+        UNNotificationInterruptionLevelActive,
+        
+        // Presented immediately; Lights up screen and may play a sound; May be presented during Do Not Disturb
+        UNNotificationInterruptionLevelTimeSensitive,
+        
+        // Presented immediately; Lights up screen and plays sound; Always presented during Do Not Disturb; Bypasses mute switch; Includes default critical alert sound if no sound provided
+        UNNotificationInterruptionLevelCritical,
+
+    } API_AVAILABLE(macos(12.0), ios(15.0), watchos(8.0), tvos(15.0));
+	
+```
+
+1.Passive:被动类型的通知不会使手机亮屏并且不会播放声音。
+
+2.Active: 活动类型的通知会使手机亮屏且会播放声音，为默认类型。
+
+3.Time Sensitive（时间敏感）：会使手机亮屏且会播放声音；可能会在免打扰模式（焦点模式）下展示。
+
+
+```
+设置推送通知数据: 时间敏感的中断级别可以使用“interruption-level” payload key：{"aps":{"interruption-level":"time-sensitive"}}
+时效性通知开发者无法直接使用，需要配置对应的权限:
+a. xcode 开启对应能力
+
+
+b. 开发者后台配置appID支持该权限(通过Xcode开启对应能力通常会自动添加)
+	
+```
+![](https://github.com/dongpeng66/iOS-/blob/main/images/15.png)
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/16.png)
+
+5.Critical（关键）：会立刻展示，亮屏，播放声音，无效免打扰模式，并且能够绕过静音，如果没有设置声音则会使用一种默认的声音。
+
+## 适用于地震等紧急情况,需要特殊申请。
+
+判断是否有时间敏感权限 @property(readonly, nonatomic) UNNotificationSetting timeSensitiveSetting;，如果没有需要提示用户开启。
+
+UNNotificationSetting
+
+```
+typedef NS_ENUM(NSInteger, UNNotificationSetting) {
+    // The application does not support this notification type
+    UNNotificationSettingNotSupported  = 0,
+    
+    // The notification setting is turned off.
+    UNNotificationSettingDisabled,
+    
+    // The notification setting is turned on.
+    UNNotificationSettingEnabled,
+} API_AVAILABLE(macos(10.14), ios(10.0), watchos(3.0), tvos(10.0));
+
+```
+
+## 1.2 测试
+
+开发者想打ad hot 的话，需要能访问云端管理的分发证书
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/17.png)
+
+可以使用极光的网页端或者接口进行测试，或者使用smart push。
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/18.png)
+
+## 1.3 升级JPush iOS SDK
+
+
+v4.4.0: pod 'JPush' , '4.4.0'
+
+```
+更新时间:2021-10-28
+
+Change Log:
+
+SDK适配ios15系统的本地通知功能
+
+富媒体横屏异常兼容性处理
+
+```
+
+
+错误信息： ld: library not found for -ljcore-ios-2.3.4
+
+原因：other linker flags 的信息没有自动更新
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/19.png)
+
+解决方案：直接删除other linker flags的jcore信息即可
