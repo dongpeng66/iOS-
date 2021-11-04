@@ -422,3 +422,355 @@ void __sanitizer_cov_trace_pc_guard(uint32_t *guard) {
 
 而实际上这也是静态插桩的原理和名称由来 .
 
+
+# 静态插桩总结
+
+静态插桩实际上是在编译期就在每一个函数内部二进制源数据添加 hook 代码 ( 我们添加的 __sanitizer_cov_trace_pc_guard 函数 ) 来实现全局的方法 hook 的效果 .
+
+# 疑问
+
+可能有部分同学对我上述表述的原理总结有些疑问 .
+
+究竟是直接修改二进制在每个函数内部都添加了调用 hook 函数这个汇编代码 , 还是只是类似于编译器在所生成的二进制文件添加了一个标记 , 然后在运行时如果有这个标记就会自动多做一步调用 hook 代码呢 ?
+
+笔者这里使用 hopper 来看下生成的 mach-o 二进制文件 .
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main26.png)
+
+上述二进制源文件我们就发现 , 的确是函数内部 一开始就添加了 调用额外方法的汇编代码 . 这也是我们为什么称其为 " 静态插桩 " .
+
+讲到这里 , 原理我们大体上了解了 , 那么到底如何才能拿到函数的符号呢 ?'
+
+# 获取所有函数符号
+
+先理一下思路 .
+
+## 思路
+我们现在知道了 , 所有函数内部第一步都会去调用 __sanitizer_cov_trace_pc_guard 这个函数 . 那么熟悉汇编的同学可能就有这么个想法 :
+
+函数嵌套时 , 在跳转子函数时都会保存下一条指令的地址在 X30 ( 又叫 lr 寄存器) 里 .
+
+例如 , A 函数中调用了 B 函数 , 在 arm 汇编中即 bl + 0x**** 指令 , 该指令会首先将下一条汇编指令的地址保存在 x30 寄存器中 ,
+然后在跳转到 bl 后面传递的指定地址去执行 . ( 提示 : bl 能实现跳转到某个地址的汇编指令 , 其原理就是修改 pc 寄存器的值来指向到要跳转的地址 , 而且实际上 B 函数中也会对 x29 / x30 寄存器的值做保护防止子函数又跳转其他函数会覆盖掉 x30 的值 , 当然 , 叶子函数除外 . ) .
+
+当 B 函数执行 ret 也就是返回指令时 , 就会去读取 x30 寄存器的地址 , 跳转过去 , 因此也就回到了上一层函数的下一步 .
+
+这种思路来实现实际上是可以的 . 我们所写的 __sanitizer_cov_trace_pc_guard 函数中的这一句代码 :
+```
+void *PC = __builtin_return_address(0);
+
+```
+
+它的作用其实就是去读取 x30 中所存储的要返回时下一条指令的地址 . 所以他名称叫做 __builtin_return_address . 换句话说 , 这个地址就是我当前这个函数执行完毕后 , 要返回到哪里去 .
+
+其实 , bt 函数调用栈也是这种思路来实现的 .
+
+也就是说 , 我们现在可以在 __sanitizer_cov_trace_pc_guard 这个函数中 , 通过 __builtin_return_address 数拿到原函数调用 __sanitizer_cov_trace_pc_guard 这句汇编代码的下一条指令的地址 .
+
+可能有点绕 , 画个图来梳理一下流程 .
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main27.png)
+
+# 根据内存地址获取函数名称
+
+拿到了函数内部一行代码的地址 , 如何获取函数名称呢 ? 这里笔者分享一下自己的思路 .
+
+熟悉安全攻防 , 逆向的同学可能会清楚 . 我们为了防止某些特定的方法被别人使用 fishhook hook 掉 , 会利用 dlopen 打开动态库 , 拿到一个句柄 , 进而拿到函数的内存地址直接调用 .
+
+是不是跟我们这个流程有点相似 , 只是我们好像是反过来的 . 其实反过来也是可以的 .
+
+与 dlopen 相同 , 在 dlfcn.h 中有一个方法如下 :
+
+```
+typedef struct dl_info {
+        const char      *dli_fname;     /* 所在文件 */
+        void            *dli_fbase;     /* 文件地址 */
+        const char      *dli_sname;     /* 符号名称 */
+        void            *dli_saddr;     /* 函数起始地址 */
+} Dl_info;
+ 
+//这个函数能通过函数内部地址找到函数符号
+int dladdr(const void *, Dl_info *);
+
+```
+
+紧接着我们来实验一下 , 先导入头文件#import , 然后修改代码如下 :
+
+```
+void __sanitizer_cov_trace_pc_guard(uint32_t *guard) {
+    if (!*guard) return;  // Duplicate the guard check.
+     
+    void *PC = __builtin_return_address(0);
+    Dl_info info;
+    dladdr(PC, &info);
+     
+    printf("fname=%s \nfbase=%p \nsname=%s\nsaddr=%p \n",info.dli_fname,info.dli_fbase,info.dli_sname,info.dli_saddr);
+     
+    char PcDescr[1024];
+    printf("guard: %p %x PC %s\n", guard, *guard, PcDescr);
+}
+
+```
+
+查看打印结果 :
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main28.png)
+
+终于看到我们要找的符号了 .
+
+# 收集符号
+
+看到这里 , 很多同学可能想的是 , 那马上到工程里去拿到我所有的符号 , 写到 order 文件里不就完事了吗 ?
+
+为什么呢 ??
+
+## clang静态插桩 - 坑点1
+
+### → : 多线程问题
+
+```
+这是一个多线程的问题 , 由于你的项目各个方法肯定有可能会在不同的函数执行 , 因此 __sanitizer_cov_trace_pc_guard 这个函数也有可能受多线程影响 , 所以你当然不可能简简单单用一个数组来接收所有的符号就搞定了 .
+```
+
+那方法有很多 , 笔者在这里分享一下自己的做法 :
+
+考虑到这个方法会来特别多次 , 使用锁会影响性能 , 这里使用苹果底层的原子队列 ( 底层实际上是个栈结构 , 利用队列结构 + 原子性来保证顺序 ) 来实现 .
+
+
+```
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event{
+    //遍历出队
+    while (true) {
+        //offsetof 就是针对某个结构体找到某个属性相对这个结构体的偏移量
+        SymbolNode * node = OSAtomicDequeue(&symboList, offsetof(SymbolNode, next));
+        if (node == NULL) break;
+        Dl_info info;
+        dladdr(node->pc, &info);
+         
+        printf("%s \n",info.dli_sname);
+    }
+}
+//原子队列
+static OSQueueHead symboList = OS_ATOMIC_QUEUE_INIT;
+//定义符号结构体
+typedef struct{
+    void * pc;
+    void * next;
+}SymbolNode;
+ 
+void __sanitizer_cov_trace_pc_guard(uint32_t *guard) {
+    if (!*guard) return;  // Duplicate the guard check.
+    void *PC = __builtin_return_address(0);
+    SymbolNode * node = malloc(sizeof(SymbolNode));
+    *node = (SymbolNode){PC,NULL};
+     
+    //入队
+    // offsetof 用在这里是为了入队添加下一个节点找到 前一个节点next指针的位置
+    OSAtomicEnqueue(&symboList, node, offsetof(SymbolNode, next));
+}
+
+```
+
+当你兴致冲冲开始考虑好多线程的解决方法写完之后 , 运行发现 :
+
+死循环了 .
+
+## clang静态插桩 - 坑点2
+### → : 上述这种 clang 插桩的方式 , 会在循环中同样插入 hook 代码 .
+
+当确定了我们队列入队和出队都是没问题的 , 你自己的写法对应的保存和读取也是没问题的 , 我们发现了这个坑点 , 这个会死循环 , 为什么呢 ?
+
+这里我就不带着大家去分析汇编了 , 直接说结论 :
+
+通过汇编会查看到 一个带有 while 循环的方法 , 会被静态加入多次 __sanitizer_cov_trace_pc_guard 调用 , 导致死循环.
+
+
+
+### → : 解决方案
+
+Other C Flags 修改为如下 :
+
+
+```
+-fsanitize-coverage=func,trace-pc-guard
+
+```
+
+代表进针对 func 进行 hook . 再次运行 .
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main29.png)
+
+又以为完事了 ? 还没有..
+
+## 坑点3 : load 方法
+
+### → : load 方法时 , __sanitizer_cov_trace_pc_guard 函数的参数 guard 是 0.
+
+上述打印并没有发现 load .
+
+解决 : 屏蔽掉 __sanitizer_cov_trace_pc_guard 函数中的
+
+```
+if (!*guard) return;
+
+```
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main30.png)
+
+load 方法就有了 .
+
+这里也为我们提供了一点启示:
+
+如果我们希望从某个函数之后/之前开始优化 , 通过一个全局静态变量 , 在特定的时机修改其值 , 在 __sanitizer_cov_trace_pc_guard 这个函数中做好对应的处理即可 .
+
+# 剩余细化工作
+
+```
+如果你也是使用笔者这种多线程处理方式的话 , 由于用的先进后出原因 , 我们要倒叙一下
+
+还需要做去重 .
+
+order 文件格式要求c 函数 , block 调用前面还需要加 _ , 下划线 .
+
+写入文件即可 .
+```
+
+ demo 完整代码如下 :
+ 
+```
+#import "ViewController.h"
+#import <dlfcn.h>
+#import <libkern/OSAtomic.h>
+@interface ViewController ()
+@end
+ 
+@implementation ViewController
++ (void)load{
+     
+}
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    testCFunc();
+    [self testOCFunc];
+}
+- (void)testOCFunc{
+    NSLog(@"oc函数");
+}
+void testCFunc(){
+    LBBlock();
+}
+void(^LBBlock)(void) = ^(void){
+    NSLog(@"block");
+};
+ 
+void __sanitizer_cov_trace_pc_guard_init(uint32_t *start,
+                                         uint32_t *stop) {
+    static uint64_t N;  // Counter for the guards.
+    if (start == stop || *start) return;  // Initialize only once.
+    printf("INIT: %p %p\n", start, stop);
+    for (uint32_t *x = start; x < stop; x++)
+        *x = ++N;  // Guards should start from 1.
+}
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event{
+    NSMutableArray<NSString *> * symbolNames = [NSMutableArray array];
+    while (true) {
+        //offsetof 就是针对某个结构体找到某个属性相对这个结构体的偏移量
+        SymbolNode * node = OSAtomicDequeue(&symboList, offsetof(SymbolNode, next));
+        if (node == NULL) break;
+        Dl_info info;
+        dladdr(node->pc, &info);
+         
+        NSString * name = @(info.dli_sname);
+         
+        // 添加 _
+        BOOL isObjc = [name hasPrefix:@"+["] || [name hasPrefix:@"-["];
+        NSString * symbolName = isObjc ? name : [@"_" stringByAppendingString:name];
+         
+        //去重
+        if (![symbolNames containsObject:symbolName]) {
+            [symbolNames addObject:symbolName];
+        }
+    }
+ 
+    //取反
+    NSArray * symbolAry = [[symbolNames reverseObjectEnumerator] allObjects];
+    NSLog(@"%@",symbolAry);
+     
+    //将结果写入到文件
+    NSString * funcString = [symbolAry componentsJoinedByString:@"\n"];
+    NSString * filePath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"lb.order"];
+    NSData * fileContents = [funcString dataUsingEncoding:NSUTF8StringEncoding];
+    BOOL result = [[NSFileManager defaultManager] createFileAtPath:filePath contents:fileContents attributes:nil];
+    if (result) {
+        NSLog(@"%@",filePath);
+    }else{
+        NSLog(@"文件写入出错");
+    }
+     
+}
+//原子队列
+static OSQueueHead symboList = OS_ATOMIC_QUEUE_INIT;
+//定义符号结构体
+typedef struct{
+    void * pc;
+    void * next;
+}SymbolNode;
+ 
+void __sanitizer_cov_trace_pc_guard(uint32_t *guard) {
+    //if (!*guard) return;  // Duplicate the guard check.
+     
+    void *PC = __builtin_return_address(0);
+     
+    SymbolNode * node = malloc(sizeof(SymbolNode));
+    *node = (SymbolNode){PC,NULL};
+     
+    //入队
+    // offsetof 用在这里是为了入队添加下一个节点找到 前一个节点next指针的位置
+    OSAtomicEnqueue(&symboList, node, offsetof(SymbolNode, next));
+}
+@end
+```
+
+文件写入到了 tmp 路径下 , 运行 , 打开手机下载查看 :
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main31.png)
+
+搞定 , 小伙伴们就可以立马去优化自己的工程了 .
+
+# swift 工程 / 混编工程问题
+
+通过如上方式适合纯 OC 工程获取符号方式 .
+
+由于 swift 的编译器前端是自己的 swift 编译前端程序 , 因此配置稍有不同 .
+
+搜索 Other Swift Flags , 添加两条配置即可 :
+
+```
+-sanitize-coverage=func
+
+-sanitize=undefined
+```
+swift 类通过上述方法同样可以获取符号 .
+
+
+# 优化后效果监测
+
+在完全第一次安装冷启动 , 保证同样的环境 , page fault 采样同样截取到第一个可交互界面 , 使用重排优化前后效果如下 .
+
+优化前
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main32.png)
+
+优化后
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main33.png)
+
+实际上 , 在生产环境中 , 由于 page fault 还需要签名验证 , 因此在分发环境下 , 优化效果其实更多 .
+
+# 总结
+
+本篇文章通过以实际碳素过程为基准 , 一步一步实现 clang 静态插桩达到二进制重排优化启动时间的完整流程 .
+
+具体实现步骤如下 :
+
+1️⃣ : 利用 clang 插桩获得启动时期需要加载的所有 函数/方法 , block , swift 方法以及 c++构造方法的符号 .
+
+2️⃣ : 通过 order file 机制实现二进制重排 .
