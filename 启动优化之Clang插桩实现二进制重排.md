@@ -274,3 +274,11 @@ iOS 系统中 , 一页为 16KB .
 Link Map 是编译期间产生的产物 , ( ld 的读取二进制文件顺序默认是按照 Compile Sources - GUI 里的顺序 ) , 它记录了二进制文件的布局 . 通过设置 Write Link Map File 来设置输出与否 , 默认是 no 
 
 ![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main13.png)
+
+修改完毕后 clean 一下 , 运行工程 , Products - show in finder, 找到 macho 的上上层目录.
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main14.png)
+
+按下图依次找到最新的一个 .txt 文件并打开.
+
+![](https://github.com/dongpeng66/iOS-/blob/main/images/clang二进制重排/pre-main15.png)
