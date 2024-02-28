@@ -30,20 +30,27 @@
     //此方法先调用可以用来判断是不是浮动键盘
     CGRect keyboardFrame = [[[notification userInfo] objectForKey:UIKeyboardFrameEndUserInfoKey] CGRectValue];
     CGFloat duration = [[notification.userInfo valueForKey:UIKeyboardAnimationDurationUserInfoKey] floatValue];
+    NSUInteger animationCurveOption = [[keyboardInfo valueForKey:UIKeyboardAnimationCurveUserInfoKey] integerValue];
     if (keyboardFrame.size.width != UIScreen.mainScreen.bounds.size.width && IS_IPAD) {
         //浮动键盘
         NSLog(@"浮动键盘");
         
-        if ((keyboardFrame.size.width == 0) && (keyboardFrame.size.height == 0) && (keyboardFrame.origin.y == 0) && (keyboardFrame.origin.x == 0)) {
+        if (CGRectEqualToRect(keyboardFrameEndRect, CGRectZero)) {
             //键盘隐藏
+            if (animationCurveOption != 0) { // When animation curve is zero, the keyboard is being hidden. (Otherwise, it's being moved)
+            // TODO: FLOATING KEYBOARD IS HIDING
+            }
         }else{
             //键盘显示
+            // TODO: FLOATING KEYBOARD IS SHOWING
         }
     }else{
         //正常键盘
         NSLog(@"正常键盘");
+        
        
     }
+
 }
 
 ```
